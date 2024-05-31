@@ -28,9 +28,11 @@ def runShallowWaterEqWithPBC(n, IC, dt, T):
 
     timesteps = np.linspace(0,T,num=nt)
     
-    soln = odeint(shallowWaterForwardProp, IC, timesteps, args=(dx,))
-
-    print(timesteps)
+    ts = "expl"
+    if ts == "expl":
+        soln = odeint(shallowWaterForwardProp, IC, timesteps, args=(dx,numNodes))
+    elif ts == "impl":
+        pass
 
     return soln
 
@@ -48,24 +50,46 @@ def runLaplaceEqWithPBC(n, IC, dt, T):
     timesteps = np.linspace(0,T,num=nt)
     x = IC_rm
 
-    ts = "impl"
-    if ts == "impl":
-        systemMat = getLaplacianStiffnessMatWithPBC(dx, dt, n)
-        invSystemMat = np.linalg.solve(systemMat, np.eye(x.shape[0]))
-    for i,t in enumerate(timesteps[1:]):
-        if ts == "expl":
-            x = laplaceForwardProp2ndOrder(x, dx, dt, n)
-        elif ts == "impl":
-            x = invSystemMat@x
-        soln[i,:] = x
-
-    print(timesteps)
+    ts = "expl_int"
+    if ts == "expl_int":
+        systemMat = getLaplacianStiffnessMatWithPBC(-dx, 1, n, isforward=True)
+        soln = odeint(laplaceForwardPropOdeInt, IC_rm, timesteps, args=(dx,n,))
+    else:
+        if ts == "impl":
+            systemMat = getLaplacianStiffnessMatWithPBC(dx, dt, n)
+            invSystemMat = np.linalg.solve(systemMat, np.eye(x.shape[0]))
+        for i,t in enumerate(timesteps[1:]):
+            if ts == "expl":
+                x = laplaceForwardProp2ndOrder(x, dx, dt, n)
+            elif ts == "impl":
+                x = invSystemMat@x
+            soln[i,:] = x
 
     return soln
 
-def getLaplacianStiffnessMatWithPBC(dx, dt, n):
+def shallowWaterForwardProp(y, t, dx, numNodes):
+    offset1 = numNodes
+    offset2 = 2*numNodes
+
+    u = y[:offset1]
+    v = y[offset1:offset2]
+    h = y[offset2:]
+
+# TODO
+    dudt = u
+    dvdt = v
+    dhdt = h
+
+    out = np.hstack([dudt,dvdt,dhdt])
+
+    return out
+
+def getLaplacianStiffnessMatWithPBC(dx, dt, n, isforward=False):
     alpha = -dt/dx/dx
-    center = 1 - 4*alpha
+    if isforward:
+        center = -4*alpha
+    else:
+        center = 1 - 4*alpha
 
     systemSize = n*n
     out = np.zeros([systemSize,systemSize])
@@ -85,9 +109,6 @@ def getLaplacianStiffnessMatWithPBC(dx, dt, n):
 
     return out
 
-def shallowWaterForwardProp(y, t, dx):
-    pass
-
 def laplaceForwardProp2ndOrder(state, dx, dt, nx):
     alpha = dt/dx/dx
 
@@ -95,6 +116,16 @@ def laplaceForwardProp2ndOrder(state, dx, dt, nx):
                 indexIntoState(state, 0, 1, nx) + indexIntoState(state, 0, -1, nx))
     
     out += (1 - 4*alpha) * indexIntoState(state, 0, 0, nx)
+
+    return out
+
+def laplaceForwardPropOdeInt(y, t, dx, nx):
+    alpha = 1/dx/dx
+
+    out = alpha * (indexIntoState(y, 1, 0, nx) + indexIntoState(y, -1, 0, nx) + 
+                indexIntoState(y, 0, 1, nx) + indexIntoState(y, 0, -1, nx) - 4*indexIntoState(y, 0, 0, nx))
+
+    # out = mat@y
 
     return out
 
@@ -169,8 +200,8 @@ if __name__ == '__main__':
     n is number of nodes evenly spaced across [-pi/4, pi/4]
     nt is number of timesteps, including the initial condition
     '''
-    n = 11
-    dx2 = (math.pi/4/(n-1))**2 / 2
+    n = 31
+    dx2 = (math.pi/4/(n-1))**2 
 
     T = 1
     dt = .05
@@ -183,36 +214,20 @@ if __name__ == '__main__':
     xs = np.linspace(-QPI, QPI, n)
     ys = np.linspace(-QPI, QPI, n)
 
-    print('test')
-    print(xs, -QPI/2)
     logicx = (-QPI/2 > xs) | (xs > QPI/2)
     logicy = (-QPI/2 > ys) | (ys > QPI/2)
 
     [X,Y] = np.meshgrid(xs, ys)
 
-    print('loginds')
-    print(logicx,logicy)
-    print('----------')
-    print(X)
-    print(Y)
-
     r2d = 180/np.pi
 
     IC = np.cos(4*X)*np.cos(4*Y)
-    print('-----------')
-    print(IC)
+
     IC[logicy, :] = 0
     IC[:, logicx] = 0
-    
-    print('--------------')
-    print(IC)
-
-    # print(xs)
-    # print(ys)
 
     solns = runLaplaceEqWithPBC(n, IC, dt, T)
     soln_reshape = np.reshape(solns, [nt,n,n])
-    print(soln_reshape[1,:,:])
     ie = np.sum(soln_reshape,axis=(1,2))
     plt.plot(ie)
     animate_surface(soln_reshape)
