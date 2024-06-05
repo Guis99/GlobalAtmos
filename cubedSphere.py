@@ -159,6 +159,32 @@ def vizGrid(grid, dx, N):
     plt.subplots_adjust(wspace=0, hspace=0)
     plt.tight_layout()
     plt.show()
+
+
+def sub2indOnCube(i,j,nx):
+    '''i,j: numpy vectors of i and j coords'''
+    return j * nx + i
+
+def rollIndicesOnCube(offset_i, offset_j, nx):
+    offset_i = -offset_i
+    offset_j = -offset_j
+    p = np.arange(nx)
+
+    rolledX = np.roll(p, offset_i)
+    rolledY = np.roll(p, offset_j)
+
+    [X,Y] = np.meshgrid(rolledX, rolledY)
+    iIdxs = np.reshape(X,nx*nx)
+    jIdxs = np.reshape(Y,nx*nx)
+
+    linIdx = sub2indOnCube(iIdxs, jIdxs, nx)
+
+    return linIdx
+
+def indexIntoStateOnCube(state, offset_i, offset_j, nx):
+    linIdx = rollIndicesOnCube(offset_i, offset_j, nx)
+
+    return state[linIdx]
     
 
 if __name__ == '__main__':
